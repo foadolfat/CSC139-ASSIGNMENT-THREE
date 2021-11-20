@@ -6,10 +6,9 @@
 
 pthread_mutex_t mutex;
 pthread_attr_t attr;
-pthread_t tid;
 sem_t full, empty;
 buffer_item buffer[BUFFER_SIZE];
-int itemCount, itemsProduced, in, out;
+int itemCount, itemsProduced, itemsProcessed, in, out;
 
 void *producer(void *param);
 void *consumer(void *param); 
@@ -22,7 +21,7 @@ int insert_item(buffer_item item) {
  //}
  if(itemsProduced!=BUFFER_SIZE){
   buffer[in] = item;
-  in = in+1;
+  in = (in+1)%BUFFER_SIZE;
   itemsProduced++;
   return 0;
  } else{
@@ -36,10 +35,10 @@ int remove_item(buffer_item *item) {
  // *item = buffer[itemCount-1];
  // itemCount--;
  //}
- if(itemsProduced!=0){
+ if(itemsProcessed<=itemsProduced){
   *item = buffer[out];
-  out = out+1;
-  itemsProduced--;
+  out = (out+1)%BUFFER_SIZE;
+  itemsProcessed--;
   return 0;
  } else{
   printf("Unable to remove");
@@ -50,7 +49,8 @@ int remove_item(buffer_item *item) {
 void *producer(void *param){
  buffer_item item;
  //printf("producer\n");
- while(1){
+ while(itemsProduced<=itemCount){
+ //while(1){
   //if(itemCount<=itemsProduced) break;
   int time = rand()/100000000;
   usleep(time);
@@ -66,13 +66,15 @@ void *producer(void *param){
   pthread_mutex_unlock(&mutex);
   sem_post(&full);
  }
+ pthread_exit(NULL);
 }
 
 void *consumer(void *param) {
  buffer_item item;
  //printf("consumer\n");
- while(1){
-  int time = rand()/100000000;
+ while(itemsProcessed<=itemCount){
+ //while(1){
+   int time = rand()/100000000;
   usleep(time);
   
   sem_wait(&full);
@@ -81,10 +83,11 @@ void *consumer(void *param) {
   if(remove_item(&item)) fprintf(stderr, "consumption failed\n");
   else printf("consumer %d consumed %d\n", param, item);
 
-  
+  //itemsProcessed++; 
   pthread_mutex_unlock(&mutex);
   sem_post(&empty);
  }
+ pthread_exit(NULL);
 }
 
 void main(int argc, char *argv[]){
@@ -107,27 +110,47 @@ void main(int argc, char *argv[]){
  sem_init(&empty, 0, BUFFER_SIZE);
  pthread_attr_init(&attr);
  itemsProduced=0;
- 
+ itemsProcessed=0;
+ pthread_t protid[numOfProducers], contid[numOfConsumers];
+
  int i;
  for(i=0; i<numOfProducers; i++){ 
   //printf("%d\n",i);
   //pthread_attr_init(&attr);
-  pthread_create(&tid, &attr, producer, i);
+  //char id[16];
+  //sprintf(id, "%d", i);
+  pthread_create(&protid[i], &attr, (void *)producer, (void *)i);
  }
  for(i=0; i<numOfConsumers; i++){
   //printf("%d\n",i);
   //pthread_attr_init(&attr);
-  pthread_create(&tid, &attr, consumer, i);
+  //char id[16];
+  //sprintf(id, "%d", i);
+  //printf("%s\n",id);
+  pthread_create(&contid[i], &attr, (void *)consumer, (void *)i);
  }
  //pthread_mutex_destroy(&mutex);
  //sem_destroy(&empty);
  //sem_destroy(&full);
- 
- if(itemsProduced == itemCount) { 
-  printf("exiting\n");
-  exit(0);
-  pthread_mutex_destroy(&mutex);
-  sem_destroy(&empty);
-  sem_destroy(&full);
- } 
+ for(i=0; i<numOfProducers; i++){
+  pthread_join(protid[i], NULL);
+ }
+ for(i=0; i<numOfConsumers; i++){
+  pthread_join(contid[i], NULL);
+ }
+ pthread_mutex_destroy(&mutex);
+ sem_destroy(&empty);
+ sem_destroy(&full);
+ printf("exiting\n");
+ exit(0);
+ //pthread_mutex_destroy(&mutex);
+ //sem_destroy(&empty);
+ //sem_destroy(&full);
+ //if(itemsProduced == itemsProcessed) { 
+ // printf("exiting\n");
+ // exit(0);
+ // pthread_mutex_destroy(&mutex);
+ // sem_destroy(&empty);
+ // sem_destroy(&full);
+ //} 
 }
