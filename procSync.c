@@ -8,7 +8,7 @@ pthread_mutex_t mutex;
 pthread_attr_t attr;
 sem_t full, empty;
 buffer_item buffer[BUFFER_SIZE];
-int itemCount, itemsProduced, itemsProcessed, in, out;
+int count, itemCount, itemsProduced, itemsProcessed, in, out;
 
 void *producer(void *param);
 void *consumer(void *param); 
@@ -19,13 +19,14 @@ int insert_item(buffer_item item) {
  // buffer[itemCount++] = item;
  // return 0;
  //}
- if(itemsProduced!=BUFFER_SIZE){
+ if(itemsProduced<BUFFER_SIZE && itemsProcessed<itemCount){
   buffer[in] = item;
   in = (in+1)%BUFFER_SIZE;
-  itemsProduced++;
+  //itemsProduced++;
   return 0;
  } else{
   printf("Unable to insert\n"); 
+  return -1;
  }
 }
 
@@ -35,13 +36,14 @@ int remove_item(buffer_item *item) {
  // *item = buffer[itemCount-1];
  // itemCount--;
  //}
- if(itemsProcessed<=itemsProduced){
+ if(itemsProcessed<itemCount){
   *item = buffer[out];
   out = (out+1)%BUFFER_SIZE;
-  itemsProcessed--;
+  //itemsProcessed++;
+  //itemsProduced--;
   return 0;
  } else{
-  printf("Unable to remove");
+  printf("Unable to remove\n");
   return -1;
  }
 }
@@ -49,20 +51,24 @@ int remove_item(buffer_item *item) {
 void *producer(void *param){
  buffer_item item;
  //printf("producer\n");
- while(itemsProduced<=itemCount){
+ while(itemsProcessed<itemCount){
  //while(1){
   //if(itemCount<=itemsProduced) break;
   int time = rand()/100000000;
   usleep(time);
-  item = rand()/100000000;
+  item = rand()/1000000;
   
   sem_wait(&empty);
   pthread_mutex_lock(&mutex);
- 
-  if(insert_item(item)) fprintf(stderr, "production failed\n");
-  else printf("producer %d produced %d\n",param, item);
-  
-  itemsProduced++;
+  //printf("itemsProduced: %d\n\n",itemsProduced);
+  if(itemsProcessed<itemCount && insert_item(item)){
+   fprintf(stderr, "production failed\n"); 
+  }
+  else{ 
+   printf("producer %d produced %d\n",param, item);
+   itemsProduced++;
+  }
+  //itemsProduced++;
   pthread_mutex_unlock(&mutex);
   sem_post(&full);
  }
@@ -72,17 +78,23 @@ void *producer(void *param){
 void *consumer(void *param) {
  buffer_item item;
  //printf("consumer\n");
- while(itemsProcessed<=itemCount){
+ while(itemsProcessed<itemCount){
  //while(1){
-   int time = rand()/100000000;
+  int time = rand()/100000000;
   usleep(time);
   
   sem_wait(&full);
   pthread_mutex_lock(&mutex);
-
-  if(remove_item(&item)) fprintf(stderr, "consumption failed\n");
-  else printf("consumer %d consumed %d\n", param, item);
-
+  //printf("itemsProcessed: %d\n\n",itemsProcessed);
+  if(itemsProduced>0 && remove_item(&item)){
+   fprintf(stderr, "consumption failed\n");
+   //itemsProcessed--;
+  }
+  else{
+   printf("consumer %d consumed %d\n", param, item);
+   itemsProcessed++;
+   itemsProduced--;
+  } 
   //itemsProcessed++; 
   pthread_mutex_unlock(&mutex);
   sem_post(&empty);
@@ -134,10 +146,13 @@ void main(int argc, char *argv[]){
  //sem_destroy(&full);
  for(i=0; i<numOfProducers; i++){
   pthread_join(protid[i], NULL);
+  //printf("here1\n");
  }
  for(i=0; i<numOfConsumers; i++){
   pthread_join(contid[i], NULL);
+  //printf("here2\n");
  }
+ //printf("here\n");
  pthread_mutex_destroy(&mutex);
  sem_destroy(&empty);
  sem_destroy(&full);
